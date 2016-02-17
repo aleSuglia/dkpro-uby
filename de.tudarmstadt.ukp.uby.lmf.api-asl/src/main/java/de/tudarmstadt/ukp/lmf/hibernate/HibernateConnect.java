@@ -53,10 +53,14 @@ public class HibernateConnect
      */
     public static Configuration getConfiguration(DBConfig dbConfig)
     {
-		Configuration cfg = new Configuration().addProperties(getProperties(
+		Configuration cfg = new Configuration();
+
+        cfg.addProperties(getBasicProperties(
 				dbConfig.getJdbc_url(), dbConfig.getJdbc_driver_class(),
 				dbConfig.getDb_vendor(), dbConfig.getUser(),
 				dbConfig.getPassword(), dbConfig.isShowSQL()));
+
+        cfg.addProperties(getExtraProperties());
 
 		// load hibernate mappings
 		ClassLoader cl = HibernateConnect.class.getClassLoader();
@@ -78,6 +82,46 @@ public class HibernateConnect
 		return cfg;
 	}
 
+    /**
+     * Creates Hibernate {@link Configuration} and adds all files from Hibernate mapping folder to
+     * the model.
+     *
+     * @param dbConfig
+     *            database configuration holder
+     *
+     * @return the created Hibernate Configuration
+     */
+    public static Configuration getConfiguration(DBConfig dbConfig, Properties extraProperties)
+    {
+        Configuration cfg = new Configuration();
+
+        cfg.addProperties(getBasicProperties(
+                dbConfig.getJdbc_url(), dbConfig.getJdbc_driver_class(),
+                dbConfig.getDb_vendor(), dbConfig.getUser(),
+                dbConfig.getPassword(), dbConfig.isShowSQL()));
+
+        cfg.addProperties(getExtraProperties());
+        cfg.addProperties(extraProperties);
+
+        // load hibernate mappings
+        ClassLoader cl = HibernateConnect.class.getClassLoader();
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(
+                cl);
+        Resource[] mappings = null;
+        try {
+            mappings = resolver
+                    .getResources("hibernatemap/access/**/*.hbm.xml");
+            for (Resource mapping : mappings) {
+                cfg.addURL(mapping.getURL());
+            }
+
+        } catch (IOException e) {
+            logger.error("Hibernate mappings not found!");
+            e.printStackTrace();
+        }
+
+        return cfg;
+    }
 
     /**
      * This method creates and returns Hibernate Properties.
@@ -99,8 +143,60 @@ public class HibernateConnect
      *
      * @see Properties
      */
-    public static Properties getProperties(String jdbc_url, String jdbc_driver_class,
-            String db_vendor, String user, String password, boolean showSQL)
+    public static Properties getBasicProperties(String jdbc_url, String jdbc_driver_class,
+                                           String db_vendor, String user, String password, boolean showSQL) {
+        Properties p = new Properties();
+
+        // Database connection settings common for mysql and h2
+        p.setProperty("hibernate.connection.driver_class", jdbc_driver_class);
+        p.setProperty("hibernate.connection.characterEncoding", "UTF-8");
+        p.setProperty("hibernate.connection.useUnicode", "true");
+        p.setProperty("hibernate.connection.charSet", "UTF-8");
+        p.setProperty("hibernate.connection.username", user);
+        p.setProperty("hibernate.connection.password", password);
+
+        // connection url
+        if (!jdbc_url.startsWith("jdbc:")) {
+            if (db_vendor.equals("mysql")) {
+                p.setProperty("hibernate.connection.url", "jdbc:"+db_vendor+"://" +jdbc_url+"?characterEncoding=UTF-8&useUnicode=true");
+            } else if (db_vendor.equals("h2")){
+                p.setProperty("hibernate.connection.url", "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1");
+            }
+        }
+        else {
+            p.setProperty("hibernate.connection.url", jdbc_url);
+        }
+
+        // SQL dialect
+        if (db_vendor.equals("mysql")) {
+            p.setProperty("hibernate.dialect", UBYMySQLDialect.class.getName());
+        }
+        else if (db_vendor.equals("h2")) {
+            p.setProperty("hibernate.dialect", UBYH2Dialect.class.getName());
+        }
+        else {
+            p.setProperty("hibernate.dialect", db_vendor);
+        }
+
+        // Echo all executed SQL to stdout
+        if(showSQL) {
+            p.setProperty("hibernate.show_sql","true");
+        }
+        else {
+            p.setProperty("hibernate.show_sql","false");
+        }
+
+        return p;
+    }
+
+    /**
+     * This method creates and returns Hibernate Properties.
+     *
+     * @return hibernate properties based on the consumed parameters
+     *
+     * @see Properties
+     */
+    public static Properties getExtraProperties()
     {
         Properties p = new Properties();
         /*
@@ -116,25 +212,6 @@ public class HibernateConnect
 
          */
 
-        // Database connection settings common for mysql and h2
-        p.setProperty("hibernate.connection.driver_class", jdbc_driver_class);
-        p.setProperty("hibernate.connection.characterEncoding", "UTF-8");
-        p.setProperty("hibernate.connection.useUnicode", "true");
-        p.setProperty("hibernate.connection.charSet", "UTF-8");
-        p.setProperty("hibernate.connection.username", user);
-        p.setProperty("hibernate.connection.password", password);
-
-        // connection url
-        if (!jdbc_url.startsWith("jdbc:")) {
-	        if (db_vendor.equals("mysql")) {
-	        	p.setProperty("hibernate.connection.url", "jdbc:"+db_vendor+"://" +jdbc_url+"?characterEncoding=UTF-8&useUnicode=true");
-	        } else if (db_vendor.equals("h2")){
-	        	p.setProperty("hibernate.connection.url", "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1");
-	        }
-        }
-        else {
-        	p.setProperty("hibernate.connection.url", jdbc_url);
-        }
 
 
         // JDBC connection pool (use the built-in) -->
@@ -146,17 +223,6 @@ public class HibernateConnect
         p.setProperty("hibernate.c3p0.timeout","0");
         p.setProperty("hibernate.c3p0.max_statements","0");
         p.setProperty("hibernate.c3p0.idle_test_period","5");
-
-        // SQL dialect
-        if (db_vendor.equals("mysql")) {
-            p.setProperty("hibernate.dialect", UBYMySQLDialect.class.getName());
-        }
-        else if (db_vendor.equals("h2")) {
-            p.setProperty("hibernate.dialect", UBYH2Dialect.class.getName());
-        }
-        else {
-            p.setProperty("hibernate.dialect", db_vendor);
-        }
 
         // Enable Hibernate's automatic session context management
         p.setProperty("hibernate.current_session_context_class","thread");
@@ -174,13 +240,6 @@ public class HibernateConnect
 
         p.setProperty("hibernate.cache.use_query_cache", "false");
 
-        // Echo all executed SQL to stdout
-        if(showSQL) {
-			p.setProperty("hibernate.show_sql","true");
-		}
-		else {
-			p.setProperty("hibernate.show_sql","false");
-		}
 
         // Do only update schema on changes e.g. validate | update | create | create-drop
 //        p.setProperty("hibernate.hbm2ddl.auto","update");

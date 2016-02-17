@@ -22,6 +22,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Properties;
 
 import org.hibernate.Criteria;
 import org.hibernate.SQLQuery;
@@ -70,7 +71,7 @@ public class Uby
 {
 	protected DBConfig dbConfig;
 	protected Configuration cfg;
-	protected SessionFactory sessionFactory;
+	protected static SessionFactory sessionFactory;
 	protected Session session;
 
     /**
@@ -86,15 +87,44 @@ public class Uby
      */
 	public Uby(DBConfig dbConfig) throws IllegalArgumentException
 	{
-		if(dbConfig == null) {
+		if (dbConfig == null) {
 			throw new IllegalArgumentException("database configuration is null");
 		}
-		this.dbConfig = dbConfig;
-		cfg = HibernateConnect.getConfiguration(dbConfig);
-		ServiceRegistryBuilder serviceRegistryBuilder = new ServiceRegistryBuilder()
-				.applySettings(cfg.getProperties());
-		sessionFactory = cfg.buildSessionFactory(serviceRegistryBuilder.buildServiceRegistry());
-		openSession();
+		// if it is not yet instantiated, create a new SessionFactory
+		if (sessionFactory == null) {
+			this.dbConfig = dbConfig;
+			cfg = HibernateConnect.getConfiguration(dbConfig);
+			ServiceRegistryBuilder serviceRegistryBuilder = new ServiceRegistryBuilder()
+					.applySettings(cfg.getProperties());
+			sessionFactory = cfg.buildSessionFactory(serviceRegistryBuilder.buildServiceRegistry());
+		}
+
+		// A SessionFactory provide a thread-safe implementation
+		// Now each thread can instantiate its Uby object and the SessionFactory
+		// opens a new Session for him
+		this.session = sessionFactory.openSession();
+
+	}
+
+	public Uby(DBConfig dbConfig, Properties extraHibernate) throws IllegalArgumentException
+	{
+		if (dbConfig == null) {
+			throw new IllegalArgumentException("database configuration is null");
+		}
+		// if it is not yet instantiated, create a new SessionFactory
+		if (sessionFactory == null) {
+			this.dbConfig = dbConfig;
+			cfg = HibernateConnect.getConfiguration(dbConfig, extraHibernate);
+			ServiceRegistryBuilder serviceRegistryBuilder = new ServiceRegistryBuilder()
+					.applySettings(cfg.getProperties());
+			sessionFactory = cfg.buildSessionFactory(serviceRegistryBuilder.buildServiceRegistry());
+		}
+
+		// A SessionFactory provide a thread-safe implementation
+		// Now each thread can instantiate its Uby object and the SessionFactory
+		// opens a new Session for him
+		this.session = sessionFactory.openSession();
+
 	}
 
     /**
